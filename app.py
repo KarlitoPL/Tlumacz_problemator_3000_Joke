@@ -293,8 +293,8 @@ def simulate_loading():
         "Mistrz Pióra główkuje...",
         "Ok, to interesujące...",
         "Hmm... niezłe...",
-        "Prawie gotowe..."
-        "Gotowe, mistrz wysłał priorytetem!"
+        "Prawie gotowe...",
+        "Gotowe, mistrz wysłał priorytetem!",
         "Będzie za kilka sekund!"
     ]
     accumulated = ""
