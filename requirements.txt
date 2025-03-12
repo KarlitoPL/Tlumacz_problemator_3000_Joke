@@ -1,0 +1,6 @@
+streamlit
+requests
+bcrypt
+python-dotenv
+qdrant-client
+openai

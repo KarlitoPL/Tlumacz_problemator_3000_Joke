@@ -13,15 +13,7 @@ import openai
 
 env = dotenv_values(".env")
 
-# Nadpisujemy wartości zmiennych ze st.secrets, jeśli są dostępne
-if "QDRANT_URL" in st.secrets:
-    env["QDRANT_URL"] = st.secrets["QDRANT_URL"]
-if "QDRANT_API_KEY" in st.secrets:
-    env["QDRANT_API_KEY"] = st.secrets["QDRANT_API_KEY"]
-if "OPENAI_API_KEY" in st.secrets:
-    env["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
-
-# Teraz możesz bezpiecznie zainicjować klienta OpenAI
+# Inicjalizacja klienta OpenAI
 openai_client = OpenAI(api_key=env["OPENAI_API_KEY"])
 
 @st.cache_resource
@@ -33,7 +25,6 @@ def get_qdrant_client():
         url=env["QDRANT_URL"],     # np. "https://xxx-xxxxx-xxx-xxxxx.aws.cloud.qdrant.io"
         api_key=env["QDRANT_API_KEY"],
     )
-
 
 # -------------------------  FUNKCJE: UŻYTKOWNICY  -------------------------
 
@@ -64,10 +55,10 @@ def check_password(password: str, hashed: str) -> bool:
     """
     return bcrypt.hashpw(password.encode("utf-8"), hashed.encode("utf-8")) == hashed.encode("utf-8")
 
-def register_user(username: str, password: str, email: str) -> bool:
+def register_user(username: str, password: str) -> bool:
     """
     Rejestruje nowego użytkownika w kolekcji 'users'.
-    Zwraca True, jeśli rejestracja się udała, lub False, jeśli użytkownik już istnieje.
+    Zwraca True, jeśli rejestracja się udała, False jeśli user istnieje.
     """
     client = get_qdrant_client()
     if find_user(username):
@@ -77,7 +68,6 @@ def register_user(username: str, password: str, email: str) -> bool:
     payload = {
         "username": username,
         "hashed_password": hash_password(password),
-        "email": email,
         "created_at": int(time.time())
     }
     client.upsert(
@@ -114,55 +104,7 @@ def find_user(username: str):
             return payload
     return None
 
-# Dodane funkcje do resetu hasła:
 
-def find_user_record(username: str):
-    """
-    Zwraca CAŁY rekord (point) użytkownika o danej nazwie (z polami .id i .payload).
-    Jeśli nie znajdzie, zwraca None.
-    """
-    client = get_qdrant_client()
-    all_points = []
-    next_offset = None
-    while True:
-        points, next_offset = client.scroll(
-            collection_name="users",
-            limit=50,
-            offset=next_offset
-        )
-        all_points.extend(points)
-        if next_offset is None:
-            break
-    for point in all_points:
-        if point.payload.get("username") == username:
-            return point
-    return None
-
-def reset_password(username: str, email: str, new_password: str) -> bool:
-    """
-    Resetuje hasło użytkownika, jeśli podany adres e-mail zgadza się z tym zapisanym w bazie.
-    Aktualizuje zahashowane hasło w Qdrant i zwraca True, jeśli operacja się powiodła.
-    """
-    client = get_qdrant_client()
-    user_record = find_user_record(username)
-    if not user_record:
-        return False
-    if user_record.payload.get("email") != email:
-        return False
-
-    new_hashed = hash_password(new_password)
-    updated_payload = user_record.payload.copy()
-    updated_payload["hashed_password"] = new_hashed
-
-    client.upsert(
-         collection_name="users",
-         points=[{
-              "id": user_record.id,
-              "vector": [0.0],
-              "payload": updated_payload
-         }]
-    )
-    return True
 
 def login_user(username: str, password: str) -> bool:
     """
@@ -233,6 +175,8 @@ def get_history(account_name):
 
     return all_points
 
+
+
 def generate_prompt(problem, mode, style=None):
     """
     Generuje prompt na podstawie wpisanego problemu oraz wybranego trybu.
@@ -253,6 +197,8 @@ def get_gpt4_response(prompt):
     """
     Wywołuje API GPT-4 (lub inny model), aby wygenerować odpowiedź na zadany prompt.
     """
+
+
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o",  # Zmień na "gpt-4" lub inny model, do którego masz dostęp
@@ -285,10 +231,9 @@ def calculate_cost(prompt_text, generated_text, exchange_rate=4):
     total_cost_pln = total_cost_usd * exchange_rate
     return total_cost_usd, total_cost_pln
 
-# -------------------------  INTERFEJS STREAMLIT  -------------------------
-
+# -------------------------  URUCHOMIENIE  -------------------------
 def main():
-    st.title("Nauka poprzez zabawne opowieści (z rejestracją, logowaniem i resetem hasła)")
+    st.title("Nauka poprzez zabawne opowieści (z rejestracją i logowaniem)")
 
     # Upewniamy się, że istnieje kolekcja 'users'
     create_users_collection()
@@ -299,65 +244,46 @@ def main():
     if "username" not in st.session_state:
         st.session_state["username"] = ""
 
-    # Cztery zakładki: Logowanie/Rejestracja, Reset Hasła, Generowanie, Historia
-    tab_auth, tab_reset, tab_generate, tab_saved = st.tabs([
-        "Logowanie / Rejestracja", "Reset Hasła", "Generuj", "Zapisane Opowieści i Żarty"
-    ])
+    # Trzy zakładki: Logowanie/Rejestracja, Generowanie, Historia
+    tab_auth, tab_generate, tab_saved = st.tabs(["Logowanie / Rejestracja", "Generuj", "Zapisane Opowieści i Żarty"])
 
     # -------------------------  Zakładka 1: Logowanie / Rejestracja  -------------------------
     with tab_auth:
         st.subheader("Zarejestruj się lub zaloguj")
+
         auth_mode = st.radio("Wybierz akcję:", ["Zarejestruj", "Zaloguj"])
         username = st.text_input("Nazwa użytkownika:", key="auth_username")
         password = st.text_input("Hasło:", type="password", key="auth_password")
-        email = None
-        if auth_mode == "Zarejestruj":
-            email = st.text_input("Adres e‑mail:", key="auth_email")
 
         if st.button("Dalej", key="auth_button"):
-            if not username or not password or (auth_mode == "Zarejestruj" and not email):
-                st.error("Podaj wszystkie wymagane dane!")
+            if not username or not password:
+                st.error("Podaj nazwę użytkownika i hasło!")
             else:
                 if auth_mode == "Zarejestruj":
-                    success = register_user(username, password, email)
+                    success = register_user(username, password)
                     if success:
                         st.success("Rejestracja udana! Możesz się teraz zalogować.")
                     else:
                         st.warning("Użytkownik o tej nazwie już istnieje.")
                 else:
+                    # Logowanie
                     if login_user(username, password):
                         st.success("Zalogowano pomyślnie!")
                         st.session_state["logged_in"] = True
                         st.session_state["username"] = username
+                        # Tworzymy kolekcję dla użytkownika (jeśli nie istnieje)
                         create_user_collection_if_not_exists(username)
                     else:
-                        st.error("Błędna nazwa użytkownika lub hasło. Jeśli nie pamiętasz hasła, przejdź do zakładki Reset Hasła")
+                        st.error("Błędna nazwa użytkownika lub hasło.")
 
-    # -------------------------  Zakładka 2: Reset Hasła  -------------------------
-    with tab_reset:
-        st.subheader("Reset Hasła")
-        reset_username = st.text_input("Nazwa użytkownika:", key="reset_username")
-        reset_email = st.text_input("Adres e‑mail:", key="reset_email")
-        new_password = st.text_input("Nowe hasło:", type="password", key="reset_new_password")
-        confirm_password = st.text_input("Potwierdź nowe hasło:", type="password", key="reset_confirm_password")
-        if st.button("Resetuj hasło", key="reset_button"):
-            if not reset_username or not reset_email or not new_password or not confirm_password:
-                st.error("Wypełnij wszystkie pola!")
-            elif new_password != confirm_password:
-                st.error("Nowe hasło i potwierdzenie nie są zgodne!")
-            else:
-                if reset_password(reset_username, reset_email, new_password):
-                    st.success("Hasło zostało zresetowane. Możesz się teraz zalogować.")
-                else:
-                    st.error("Reset hasła nie powiódł się. Sprawdź dane.")
-
-    # -------------------------  Zakładka 3: Generowanie  -------------------------
+    # -------------------------  Zakładka 2: Generowanie  -------------------------
     with tab_generate:
         st.header("Generowanie opowieści lub żartów")
         if not st.session_state["logged_in"]:
             st.warning("Musisz się zalogować, aby korzystać z tej zakładki.")
         else:
             st.info(f"Zalogowano jako: {st.session_state['username']}")
+
             problem_input = st.text_area("Wpisz problem lub cokolwiek, czego nie rozumiesz:")
             mode = st.radio("Wybierz tryb:", ("Ulubione Universum", "Zabawnie"))
             style_input = None
@@ -369,6 +295,9 @@ def main():
                     st.error("Pole problem jest puste!")
                 else:
                     prompt = generate_prompt(problem_input, mode, style_input)
+                    st.subheader("Wygenerowany prompt:")
+                    st.code(prompt, language="python")
+
                     generated_text = get_gpt4_response(prompt)
                     if generated_text:
                         st.subheader("Wygenerowany tekst:")
@@ -376,7 +305,9 @@ def main():
                         
                         cost_usd, cost_pln = calculate_cost(prompt, generated_text)
                         st.markdown("---")
-                        st.write(f"**Szacowany koszt to około  (~{cost_pln:.2f} zł)")
+                        st.write(f"Szacowany koszt wywołania API GPT-4: {cost_usd*100:.2f} centów USD (~{cost_pln:.2f} zł)")
+
+                        # Zapisujemy historię w kolekcji użytkownika
                         save_history(
                             account_name=st.session_state["username"],
                             record_type=mode,
@@ -386,18 +317,21 @@ def main():
                             cost_pln=cost_pln
                         )
 
-    # -------------------------  Zakładka 4: Historia  -------------------------
+    # -------------------------  Zakładka 3: Przegląd zapisanych historii  -------------------------
     with tab_saved:
         st.header("Zapisane Opowieści i Żarty")
         if not st.session_state["logged_in"]:
-            st.warning("Musisz się zalogować, aby przeglądać zapisane historie.")
+            st.warning("Musisz się zalogować, aby przeglądać zapisaną historię.")
         else:
             st.info(f"Zalogowano jako: {st.session_state['username']}")
-            st.write("Poniżej wyświetlamy zapisane rekordy dla Twojego konta.")
+            st.write("Poniżej wyświetlamy zapisane rekordy dla zalogowanego użytkownika.")
+
+            # Wczytujemy historię z kolekcji zalogowanego użytkownika
             user_collection = st.session_state["username"]
             client = get_qdrant_client()
             existing = client.get_collections().collections
             collection_names = [col.name for col in existing]
+
             if user_collection in collection_names:
                 history = get_history(user_collection)
                 if history:
@@ -405,14 +339,17 @@ def main():
                         payload = item.payload
                         st.write("---")
                         st.write(f"**Typ**: {payload.get('type')}")
+                        st.write(f"**Prompt**: {payload.get('prompt')}")
                         st.write(f"**Tekst**: {payload.get('generated_text')}")
                         cost_usd = payload.get("cost_usd", 0)
                         cost_pln = payload.get("cost_pln", 0)
-                        st.write(f"**Szacowany koszt to około  (~{cost_pln:.2f} zł)")
+                        st.write(f"**Koszt**: {cost_usd*100:.2f} centów USD (~{cost_pln:.2f} zł)")
                 else:
-                    st.info("Brak zapisanych rekordów w Twojej kolekcji.")
+                    st.info("Brak zapisanych rekordów w tej kolekcji.")
             else:
                 st.warning("Twoja kolekcja jeszcze nie istnieje lub nie została poprawnie utworzona.")
 
+
+# -------------------------  URUCHOMIENIE  -------------------------
 if __name__ == "__main__":
     main()
