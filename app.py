@@ -213,7 +213,7 @@ def save_history(account_name, record_type, prompt_text, generated_text, cost_us
             "payload": payload
         }]
     )
-    st.success(f"Rekord zapisany pomyślnie. ID: {record_id}")
+    st.success(f"Twoja opowieść została pomyślnie zapisana na Twoim koncie!")
 
 def get_history(account_name):
     client = get_qdrant_client()
@@ -285,10 +285,27 @@ def calculate_cost(prompt_text, generated_text, exchange_rate=4):
     total_cost_pln = total_cost_usd * exchange_rate
     return total_cost_usd, total_cost_pln
 
+
+def simulate_loading():
+    placeholder = st.empty()
+    messages = [
+        "Problem wysłany do mistrza pióra...",
+        "Mistrz Pióra główkuje...",
+        "Ok, to interesujące...",
+        "Hmm... niezłe...",
+        "Gotowe, już do ciebie leci!"
+    ]
+    for msg in messages:
+        placeholder.text(msg)
+        time.sleep(2)  # pauza 2 sekundy między komunikatami
+    # Po zakończeniu można wyczyścić placeholder:
+    placeholder.empty()
+
+
 # -------------------------  INTERFEJS STREAMLIT  -------------------------
 
 def main():
-    st.title("Nauka poprzez zabawne opowieści (z rejestracją, logowaniem i resetem hasła)")
+    st.title("Mistrz Pióra: Rozwiąże Twoje Problemy w Rozrywkowy Sposób")
 
     # Upewniamy się, że istnieje kolekcja 'users'
     create_users_collection()
@@ -369,9 +386,13 @@ def main():
                     st.error("Pole problem jest puste!")
                 else:
                     prompt = generate_prompt(problem_input, mode, style_input)
+
+                    # Wyświetlenie komunikatów symulujących pracę "mistrza pióra"
+                    simulate_loading()
+
                     generated_text = get_gpt4_response(prompt)
                     if generated_text:
-                        st.subheader("Wygenerowany tekst:")
+                        st.subheader("Oto Twoja unikalna opowieść:")
                         st.write(generated_text)
                         
                         cost_usd, cost_pln = calculate_cost(prompt, generated_text)
@@ -393,7 +414,6 @@ def main():
             st.warning("Musisz się zalogować, aby przeglądać zapisane historie.")
         else:
             st.info(f"Zalogowano jako: {st.session_state['username']}")
-            st.write("Poniżej wyświetlamy zapisane rekordy dla Twojego konta.")
             user_collection = st.session_state["username"]
             client = get_qdrant_client()
             existing = client.get_collections().collections
