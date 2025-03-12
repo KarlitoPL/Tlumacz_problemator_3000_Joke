@@ -293,13 +293,16 @@ def simulate_loading():
         "Mistrz Pióra główkuje...",
         "Ok, to interesujące...",
         "Hmm... niezłe...",
-        "Gotowe, już do ciebie leci!"
+        "Prawie gotowe..."
+        "Gotowe, mistrz wysłał priorytetem!"
+        "Będzie za kilka sekund!"
     ]
+    accumulated = ""
     for msg in messages:
-        placeholder.text(msg)
-        time.sleep(2)  # pauza 2 sekundy między komunikatami
-    # Po zakończeniu można wyczyścić placeholder:
-    placeholder.empty()
+        accumulated += f"- {msg}\n"
+        placeholder.markdown(accumulated)
+        time.sleep(2)
+    return placeholder
 
 
 # -------------------------  INTERFEJS STREAMLIT  -------------------------
@@ -386,11 +389,15 @@ def main():
                     st.error("Pole problem jest puste!")
                 else:
                     prompt = generate_prompt(problem_input, mode, style_input)
-
-                    # Wyświetlenie komunikatów symulujących pracę "mistrza pióra"
-                    simulate_loading()
+                    
+                    # Wyświetlenie komunikatów – będą się akumulować
+                    loading_placeholder = simulate_loading()
 
                     generated_text = get_gpt4_response(prompt)
+
+                    # Po wygenerowaniu odpowiedzi usuwamy komunikaty
+                    loading_placeholder.empty()
+
                     if generated_text:
                         st.subheader("Oto Twoja unikalna opowieść:")
                         st.write(generated_text)
